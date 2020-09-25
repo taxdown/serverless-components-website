@@ -74,11 +74,14 @@ const shouldConfigureNakedDomain = (domain) => {
   return false
 }
 
-const getConfig = (inputs, state) => {
+const getConfig = (inputs, instance) => {
   const config = {}
+  const { stage, state } = instance
+  config.stage = stage
   config.indexDocument = inputs.indexDocument || 'index.html'
   config.errorDocument = inputs.errorDocument || 'index.html'
   config.bucketName = inputs.bucketName || state.bucketName || `website-${generateId()}`
+  config.apiOrigin = inputs.apiOrigin
   config.region = inputs.region || state.region || 'us-east-1'
   config.bucketUrl = `http://${config.bucketName}.s3-website-${config.region}.amazonaws.com`
   config.src = inputs.src
@@ -510,7 +513,7 @@ const createCloudFrontDistribution = async (clients, config) => {
       Enabled: true,
       HttpVersion: 'http2',
       Origins: {
-        Quantity: 1,
+        Quantity: 2,
         Items: [
           {
             Id: config.bucketName,
@@ -522,6 +525,16 @@ const createCloudFrontDistribution = async (clients, config) => {
             OriginPath: '',
             S3OriginConfig: {
               OriginAccessIdentity: ''
+            }
+          },
+          {
+            Id: config.apiOrigin,
+            DomainName: `${config.apiOrigin}.execute-api.${config.region}.amazonaws.com`,
+            OriginPath: `/${config.stage}`,
+            CustomOriginConfig: {
+              HTTPPort: 80,
+              HTTPSPort: 443,
+              OriginProtocolPolicy: 'https-only'
             }
           }
         ]
@@ -558,7 +571,7 @@ const createCloudFrontDistribution = async (clients, config) => {
           }
         },
         SmoothStreaming: false,
-        DefaultTTL: 0,
+        DefaultTTL: 86400,
         MaxTTL: 31536000,
         Compress: false,
         LambdaFunctionAssociations: {
@@ -568,8 +581,45 @@ const createCloudFrontDistribution = async (clients, config) => {
         FieldLevelEncryptionId: ''
       },
       CacheBehaviors: {
-        Quantity: 0,
-        Items: []
+        Quantity: 1,
+        Items: [
+          {
+            TargetOriginId: config.apiOrigin,
+            PathPattern: 'api/*',
+            ForwardedValues: {
+              QueryString: true,
+              Cookies: {
+                Forward: 'none'
+              },
+              Headers: {
+                Quantity: 0,
+                Items: []
+              }
+            },
+            TrustedSigners: {
+              Enabled: false,
+              Quantity: 0,
+              Items: []
+            },
+            ViewerProtocolPolicy: 'https-only',
+            AllowedMethods: {
+              Quantity: 7,
+              Items: ['DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT'],
+              CachedMethods: {
+                Quantity: 3,
+                Items: ['HEAD', 'GET', 'OPTIONS']
+              }
+            },
+            MinTTL: 86400,
+            DefaultTTL: 86400,
+            MaxTTL: 31536000,
+            Compress: true,
+            LambdaFunctionAssociations: {
+              Quantity: 0,
+              Items: []
+            }
+          }
+        ]
       }
     }
   }
@@ -872,20 +922,20 @@ const removeCloudFrontDomainDnsRecords = async (clients, config) => {
 const createOrUpdateMetaRole = async (instance, inputs, clients, serverlessAccountId) => {
   // Create or update Meta Role for monitoring and more, if option is enabled.  It's enabled by default.
   if (inputs.monitoring || typeof inputs.monitoring === 'undefined') {
-    console.log('Creating or updating the meta IAM Role...');
+    console.log('Creating or updating the meta IAM Role...')
 
-    const roleName = `${instance.name}-meta-role`;
+    const roleName = `${instance.name}-meta-role`
 
     const assumeRolePolicyDocument = {
       Version: '2012-10-17',
       Statement: {
         Effect: 'Allow',
         Principal: {
-          AWS: `arn:aws:iam::${serverlessAccountId}:root`, // Serverless's Components account
+          AWS: `arn:aws:iam::${serverlessAccountId}:root` // Serverless's Components account
         },
-        Action: 'sts:AssumeRole',
-      },
-    };
+        Action: 'sts:AssumeRole'
+      }
+    }
 
     // Create a policy that only can access APIGateway and Lambda metrics, logs from CloudWatch...
     const policy = {
@@ -902,27 +952,27 @@ const createOrUpdateMetaRole = async (instance, inputs, clients, serverlessAccou
             'logs:List*',
             'logs:Describe*',
             'logs:TestMetricFilter',
-            'logs:FilterLogEvents',
-          ],
-        },
-      ],
-    };
+            'logs:FilterLogEvents'
+          ]
+        }
+      ]
+    }
 
-    const roleDescription = `The Meta Role for the Serverless Framework App: ${instance.name} Stage: ${instance.stage}`;
+    const roleDescription = `The Meta Role for the Serverless Framework App: ${instance.name} Stage: ${instance.stage}`
 
     const result = await clients.extras.deployRole({
       roleName,
       roleDescription,
       policy,
-      assumeRolePolicyDocument,
-    });
+      assumeRolePolicyDocument
+    })
 
-    instance.state.metaRoleName = roleName;
-    instance.state.metaRoleArn = result.roleArn;
+    instance.state.metaRoleName = roleName
+    instance.state.metaRoleArn = result.roleArn
 
-    console.log(`Meta IAM Role created or updated with ARN ${instance.state.metaRoleArn}`);
+    console.log(`Meta IAM Role created or updated with ARN ${instance.state.metaRoleArn}`)
   }
-};
+}
 
 /*
  * Removes the Function & Meta Roles from aws according to the provided config
@@ -933,13 +983,12 @@ const createOrUpdateMetaRole = async (instance, inputs, clients, serverlessAccou
 const removeAllRoles = async (instance, clients) => {
   // Delete Meta Role
   if (instance.state.metaRoleName) {
-    console.log('Deleting the Meta Role...');
+    console.log('Deleting the Meta Role...')
     await clients.extras.removeRole({
-      roleName: instance.state.metaRoleName,
-    });
+      roleName: instance.state.metaRoleName
+    })
   }
-};
-
+}
 
 /**
  * Get metrics from cloudwatch
@@ -947,30 +996,24 @@ const removeAllRoles = async (instance, clients) => {
  * @param {*} rangeStart MUST be a moment() object
  * @param {*} rangeEnd MUST be a moment() object
  */
-const getMetrics = async (
-  region,
-  metaRoleArn,
-  distributionId,
-  rangeStart,
-  rangeEnd
-) => {
+const getMetrics = async (region, metaRoleArn, distributionId, rangeStart, rangeEnd) => {
   /**
    * Create AWS STS Token via the meta role that is deployed with the Express Component
    */
 
   // Assume Role
-  const assumeParams = {};
-  assumeParams.RoleSessionName = `session${Date.now()}`;
-  assumeParams.RoleArn = metaRoleArn;
-  assumeParams.DurationSeconds = 900;
+  const assumeParams = {}
+  assumeParams.RoleSessionName = `session${Date.now()}`
+  assumeParams.RoleArn = metaRoleArn
+  assumeParams.DurationSeconds = 900
 
   const sts = new AWS.STS({ region })
-  const resAssume = await sts.assumeRole(assumeParams).promise();
+  const resAssume = await sts.assumeRole(assumeParams).promise()
 
-  const roleCreds = {};
-  roleCreds.accessKeyId = resAssume.Credentials.AccessKeyId;
-  roleCreds.secretAccessKey = resAssume.Credentials.SecretAccessKey;
-  roleCreds.sessionToken = resAssume.Credentials.SessionToken;
+  const roleCreds = {}
+  roleCreds.accessKeyId = resAssume.Credentials.AccessKeyId
+  roleCreds.secretAccessKey = resAssume.Credentials.SecretAccessKey
+  roleCreds.sessionToken = resAssume.Credentials.SessionToken
 
   /**
    * Instantiate a new Extras instance w/ the temporary credentials
@@ -978,22 +1021,22 @@ const getMetrics = async (
 
   const extras = new AWS.Extras({
     credentials: roleCreds,
-    region,
+    region
   })
 
   const resources = [
     {
       type: 'aws_cloudfront',
-      distributionId,
-    },
-  ];
+      distributionId
+    }
+  ]
 
   return await extras.getMetrics({
     rangeStart,
     rangeEnd,
-    resources,
-  });
-};
+    resources
+  })
+}
 
 module.exports = {
   log,
@@ -1018,5 +1061,5 @@ module.exports = {
   removeDomainFromCloudFrontDistribution,
   removeCloudFrontDomainDnsRecords,
   removeAllRoles,
-  getMetrics,
+  getMetrics
 }

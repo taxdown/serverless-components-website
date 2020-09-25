@@ -1,8 +1,9 @@
-name: website
-version: 1.1.1
-org: serverlessinc
-description: Deploys Serverless Websites
-keywords: aws, serverless, website
-repo: https://github.com/serverless-components/website
+name: website-cloudfront-origin
+version: 1.1.12
+author: Joaquin Fernandez
+org: taxdown
+description: Deploys TaxDown Serverless Websites
+keywords: aws, serverless, taxdown, website
+repo: https://github.com/taxdown/website
 license: MIT
 src: ./src
