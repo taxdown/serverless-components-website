@@ -82,6 +82,8 @@ const getConfig = (inputs, instance) => {
   config.errorDocument = inputs.errorDocument || 'index.html'
   config.bucketName = inputs.bucketName || state.bucketName || `website-${generateId()}`
   config.apiOrigin = inputs.apiOrigin
+  config.apiRegion = inputs.apiPath
+  config.apiRegion = inputs.apiRegion
   config.region = inputs.region || state.region || 'us-east-1'
   config.bucketUrl = `http://${config.bucketName}.s3-website-${config.region}.amazonaws.com`
   config.src = inputs.src
@@ -529,8 +531,8 @@ const createCloudFrontDistribution = async (clients, config) => {
           },
           {
             Id: config.apiOrigin,
-            DomainName: `${config.apiOrigin}.execute-api.${config.region}.amazonaws.com`,
-            OriginPath: `/${config.stage}`,
+            DomainName: `${config.apiOrigin}.execute-api.${config.apiRegion}.amazonaws.com`,
+            OriginPath: `/${config.apiPath}`,
             CustomOriginConfig: {
               HTTPPort: 80,
               HTTPSPort: 443,
