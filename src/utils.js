@@ -82,7 +82,7 @@ const getConfig = (inputs, instance) => {
   config.errorDocument = inputs.errorDocument || 'index.html'
   config.bucketName = inputs.bucketName || state.bucketName || `website-${generateId()}`
   config.apiOrigin = inputs.apiOrigin
-  config.apiRegion = inputs.apiPath
+  config.apiPath = inputs.apiPath
   config.apiRegion = inputs.apiRegion
   config.region = inputs.region || state.region || 'us-east-1'
   config.bucketUrl = `http://${config.bucketName}.s3-website-${config.region}.amazonaws.com`
