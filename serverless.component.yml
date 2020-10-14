@@ -1,5 +1,5 @@
 name: website-cloudfront-origin
-version: 1.1.14
+version: 1.1.15
 author: Joaquin Fernandez
 org: taxdown
 description: Deploys TaxDown Serverless Websites

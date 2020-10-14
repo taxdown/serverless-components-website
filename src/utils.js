@@ -13,10 +13,7 @@ const log = (msg) => console.log(msg) // eslint-disable-line
 
 const sleep = async (wait) => new Promise((resolve) => setTimeout(() => resolve(), wait))
 
-const generateId = () =>
-  Math.random()
-    .toString(36)
-    .substring(6)
+const generateId = () => Math.random().toString(36).substring(6)
 
 const getClients = (credentials, region) => {
   // this error message assumes that the user is running via the CLI though...
@@ -575,7 +572,7 @@ const createCloudFrontDistribution = async (clients, config) => {
         SmoothStreaming: false,
         DefaultTTL: 86400,
         MaxTTL: 31536000,
-        Compress: false,
+        Compress: true,
         LambdaFunctionAssociations: {
           Quantity: 0,
           Items: []
@@ -594,8 +591,13 @@ const createCloudFrontDistribution = async (clients, config) => {
                 Forward: 'none'
               },
               Headers: {
-                Quantity: 0,
-                Items: []
+                Quantity: 4,
+                Items: [
+                  'Access-Control-Request-Headers',
+                  'Access-Control-Request-Method',
+                  'Origin',
+                  'Authorization'
+                ]
               }
             },
             TrustedSigners: {
